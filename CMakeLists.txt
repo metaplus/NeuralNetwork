@@ -4,12 +4,18 @@ project(nnet_final)
 set(CMAKE_CXX_STANDARD 14)
 
 set(SOURCE_FILES
-        main.cpp preliminary.hpp common/cite.hpp
-        common/citeSTL.hpp common/citeBoost.hpp )
+        main_linear.cpp
+        #main_minmax.cpp
+        #main_kmeans.cpp
+        preliminary.hpp     common/cite.hpp
+        common/citeSTL.hpp  common/citeBoost.hpp literal.hpp)
 set(EXECUTABLE_OUTPUT_PATH
         ${CMAKE_CURRENT_SOURCE_DIR}/bin)
+include_directories(
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/liblinea )
 find_package(Boost REQUIRED COMPONENTS
-        system filesystem thread )
+        system filesystem thread)
 
 if(Boost_FOUND)
 include_directories(${Boost_INCLUDE_DIRS})

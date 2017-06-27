@@ -24,6 +24,7 @@
 #include <atomic>
 #include <ratio>
 #include <exception>
+#include <cassert>
 
 //namespace chrono = std::chrono;
 //namespace place = std::placeholders;
@@ -77,12 +78,15 @@ using std::to_string;
 using std::max;
 using std::min;
 using std::advance;
+using std::distance;
 using std::ref;
 using std::move;
 using std::forward;
 using std::copy;
 using std::accumulate;
 using std::transform;
+using std::count;
+using std::count_if;
 //using std::bind;
 //using std::thread;
 //using std::future;
