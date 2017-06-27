@@ -166,9 +166,11 @@ int hardlim(double d,double threshold=0.5){
     return d>threshold?1:0;
 }
 
+#ifdef WIN64
 template <int a,int b> constexpr
 bool equal()
 {
 	return std::ratio_equal_v<ratio<a>, ratio<b>>;
-}
 
+}
+#endif
