@@ -6,7 +6,6 @@
 #include <locale.h>
 #include "linear.h"
 #include "tron.h"
-#include <omp.h>
 int liblinear_version = LIBLINEAR_VERSION;
 typedef signed char schar;
 template <class T> static inline void swap(T& x, T& y) { T t=x; x=y; y=t; }
@@ -46,17 +45,6 @@ static void info(const char *fmt,...)
 #else
 static void info(const char *fmt,...) {}
 #endif
-
-static inline int rand_int(const int max)
-{
-	static int seed = omp_get_thread_num();
-#ifdef CV_OMP
-#pragma omp threadprivate(seed)
-#endif
-	seed = ((seed * 1103515245) + 12345) & 0x7fffffff;
-	return seed%max;
-}
-
 class sparse_operator
 {
 public:
@@ -92,64 +80,6 @@ public:
 	}
 };
 
-class Reduce_Vectors
-{
-public:
-	Reduce_Vectors(int size);
-	~Reduce_Vectors();
-
-	void init(void);
-	void sum_scale_x(double scalar, feature_node *x);
-	void reduce_sum(double* v);
-
-private:
-	int nr_thread;
-	int size;
-	double **tmp_array;
-};
-
-Reduce_Vectors::Reduce_Vectors(int size)
-{
-	nr_thread = omp_get_max_threads();
-	this->size = size;
-	tmp_array = new double*[nr_thread];
-	for(int i = 0; i < nr_thread; i++)
-		tmp_array[i] = new double[size];
-}
-
-Reduce_Vectors::~Reduce_Vectors(void)
-{
-	for(int i = 0; i < nr_thread; i++)
-		delete[] tmp_array[i];
-	delete[] tmp_array;
-}
-
-void Reduce_Vectors::init(void)
-{
-#pragma omp parallel for schedule(static)
-	for(int i = 0; i < size; i++)
-		for(int j = 0; j < nr_thread; j++)
-			tmp_array[j][i] = 0.0;
-}
-
-void Reduce_Vectors::sum_scale_x(double scalar, feature_node *x)
-{
-	int thread_id = omp_get_thread_num();
-
-	sparse_operator::axpy(scalar, x, tmp_array[thread_id]);
-}
-
-void Reduce_Vectors::reduce_sum(double* v)
-{
-#pragma omp parallel for schedule(static)
-	for(int i = 0; i < size; i++)
-	{
-		v[i] = 0;
-		for(int j = 0; j < nr_thread; j++)
-			v[i] += tmp_array[j][i];
-	}
-}
-
 class l2r_lr_fun: public function
 {
 public:
@@ -169,8 +99,6 @@ private:
 	double *C;
 	double *z;
 	double *D;
-	Reduce_Vectors *reduce_vectors;
-
 	const problem *prob;
 };
 
@@ -182,9 +110,6 @@ l2r_lr_fun::l2r_lr_fun(const problem *prob, double *C)
 
 	z = new double[l];
 	D = new double[l];
-
-	reduce_vectors = new Reduce_Vectors(get_nr_variable());
-
 	this->C = C;
 }
 
@@ -192,7 +117,6 @@ l2r_lr_fun::~l2r_lr_fun()
 {
 	delete[] z;
 	delete[] D;
-	delete reduce_vectors;
 }
 
 
@@ -206,11 +130,9 @@ double l2r_lr_fun::fun(double *w)
 
 	Xv(w, z);
 
-#pragma omp parallel for private(i) reduction(+:f) schedule(static)
 	for(i=0;i<w_size;i++)
 		f += w[i]*w[i];
 	f /= 2.0;
-#pragma omp parallel for private(i) reduction(+:f) schedule(static)
 	for(i=0;i<l;i++)
 	{
 		double yz = y[i]*z[i];
@@ -230,7 +152,6 @@ void l2r_lr_fun::grad(double *w, double *g)
 	int l=prob->l;
 	int w_size=get_nr_variable();
 
-#pragma omp parallel for private(i) schedule(static)
 	for(i=0;i<l;i++)
 	{
 		z[i] = 1/(1 + exp(-y[i]*z[i]));
@@ -239,7 +160,6 @@ void l2r_lr_fun::grad(double *w, double *g)
 	}
 	XTv(z, g);
 
-#pragma omp parallel for private(i) schedule(static)
 	for(i=0;i<w_size;i++)
 		g[i] = w[i] + g[i];
 }
@@ -256,9 +176,8 @@ void l2r_lr_fun::Hv(double *s, double *Hs)
 	int w_size=get_nr_variable();
 	feature_node **x=prob->x;
 
-	reduce_vectors->init();
-
-#pragma omp parallel for private(i) schedule(guided)
+	for(i=0;i<w_size;i++)
+		Hs[i] = 0;
 	for(i=0;i<l;i++)
 	{
 		feature_node * const xi=x[i];
@@ -266,11 +185,8 @@ void l2r_lr_fun::Hv(double *s, double *Hs)
 
 		xTs = C[i]*D[i]*xTs;
 
-		reduce_vectors->sum_scale_x(xTs, xi);
+		sparse_operator::axpy(xTs, xi, Hs);
 	}
-
-	reduce_vectors->reduce_sum(Hs);
-#pragma omp parallel for private(i) schedule(static)
 	for(i=0;i<w_size;i++)
 		Hs[i] = s[i] + Hs[i];
 }
@@ -281,7 +197,6 @@ void l2r_lr_fun::Xv(double *v, double *Xv)
 	int l=prob->l;
 	feature_node **x=prob->x;
 
-#pragma omp parallel for private (i) schedule(guided)
 	for(i=0;i<l;i++)
 		Xv[i]=sparse_operator::dot(v, x[i]);
 }
@@ -290,15 +205,13 @@ void l2r_lr_fun::XTv(double *v, double *XTv)
 {
 	int i;
 	int l=prob->l;
+	int w_size=get_nr_variable();
 	feature_node **x=prob->x;
 
-	reduce_vectors->init();
-
-#pragma omp parallel for private(i) schedule(guided)
+	for(i=0;i<w_size;i++)
+		XTv[i]=0;
 	for(i=0;i<l;i++)
-		reduce_vectors->sum_scale_x(v[i], x[i]);
-	
-	reduce_vectors->reduce_sum(XTv);
+		sparse_operator::axpy(v[i], x[i], XTv);
 }
 
 class l2r_l2_svc_fun: public function
@@ -319,8 +232,6 @@ protected:
 
 	double *C;
 	double *z;
-	Reduce_Vectors *reduce_vectors;
-
 	int *I;
 	int sizeI;
 	const problem *prob;
@@ -333,9 +244,6 @@ l2r_l2_svc_fun::l2r_l2_svc_fun(const problem *prob, double *C)
 	this->prob = prob;
 
 	z = new double[l];
-
-	reduce_vectors = new Reduce_Vectors(get_nr_variable());
-
 	I = new int[l];
 	this->C = C;
 }
@@ -344,7 +252,6 @@ l2r_l2_svc_fun::~l2r_l2_svc_fun()
 {
 	delete[] z;
 	delete[] I;
-	delete reduce_vectors;
 }
 
 double l2r_l2_svc_fun::fun(double *w)
@@ -357,11 +264,9 @@ double l2r_l2_svc_fun::fun(double *w)
 
 	Xv(w, z);
 
-#pragma omp parallel for private(i) reduction(+:f) schedule(static)
 	for(i=0;i<w_size;i++)
 		f += w[i]*w[i];
 	f /= 2.0;
-#pragma omp parallel for private(i) reduction(+:f) schedule(static)
 	for(i=0;i<l;i++)
 	{
 		z[i] = y[i]*z[i];
@@ -390,7 +295,6 @@ void l2r_l2_svc_fun::grad(double *w, double *g)
 		}
 	subXTv(z, g);
 
-#pragma omp parallel for private(i) schedule(static)
 	for(i=0;i<w_size;i++)
 		g[i] = w[i] + 2*g[i];
 }
@@ -406,9 +310,8 @@ void l2r_l2_svc_fun::Hv(double *s, double *Hs)
 	int w_size=get_nr_variable();
 	feature_node **x=prob->x;
 
-	reduce_vectors->init();
-
-#pragma omp parallel for private(i) schedule(guided)
+	for(i=0;i<w_size;i++)
+		Hs[i]=0;
 	for(i=0;i<sizeI;i++)
 	{
 		feature_node * const xi=x[I[i]];
@@ -416,11 +319,8 @@ void l2r_l2_svc_fun::Hv(double *s, double *Hs)
 
 		xTs = C[I[i]]*xTs;
 
-		reduce_vectors->sum_scale_x(xTs, xi);
+		sparse_operator::axpy(xTs, xi, Hs);
 	}
-	
-	reduce_vectors->reduce_sum(Hs);
-#pragma omp parallel for private(i) schedule(static)
 	for(i=0;i<w_size;i++)
 		Hs[i] = s[i] + 2*Hs[i];
 }
@@ -431,7 +331,6 @@ void l2r_l2_svc_fun::Xv(double *v, double *Xv)
 	int l=prob->l;
 	feature_node **x=prob->x;
 
-#pragma omp parallel for private(i) schedule(guided)
 	for(i=0;i<l;i++)
 		Xv[i]=sparse_operator::dot(v, x[i]);
 }
@@ -439,15 +338,13 @@ void l2r_l2_svc_fun::Xv(double *v, double *Xv)
 void l2r_l2_svc_fun::subXTv(double *v, double *XTv)
 {
 	int i;
+	int w_size=get_nr_variable();
 	feature_node **x=prob->x;
 
-	reduce_vectors->init();
-
-#pragma omp parallel for private(i) schedule(guided)
+	for(i=0;i<w_size;i++)
+		XTv[i]=0;
 	for(i=0;i<sizeI;i++)
-		reduce_vectors->sum_scale_x(v[i], x[I[i]]);
-
-	reduce_vectors->reduce_sum(XTv);
+		sparse_operator::axpy(v[i], x[I[i]], XTv);
 }
 
 class l2r_l2_svr_fun: public l2r_l2_svc_fun
@@ -479,11 +376,9 @@ double l2r_l2_svr_fun::fun(double *w)
 
 	Xv(w, z);
 
-#pragma omp parallel for private(i) reduction(+:f) schedule(static)
 	for(i=0;i<w_size;i++)
 		f += w[i]*w[i];
 	f /= 2;
-#pragma omp parallel for private(i) reduction(+:f) schedule(static)
 	for(i=0;i<l;i++)
 	{
 		d = z[i] - y[i];
@@ -526,7 +421,6 @@ void l2r_l2_svr_fun::grad(double *w, double *g)
 	}
 	subXTv(z, g);
 
-#pragma omp parallel for private(i) schedule(static)
 	for(i=0;i<w_size;i++)
 		g[i] = w[i] + 2*g[i];
 }
@@ -687,7 +581,7 @@ void Solver_MCSVM_CS::Solve(double *w)
 		double stopping = -INF;
 		for(i=0;i<active_size;i++)
 		{
-			int j = i+rand_int(active_size-i);
+			int j = i+rand()%(active_size-i);
 			swap(index[i], index[j]);
 		}
 		for(s=0;s<active_size;s++)
@@ -883,7 +777,7 @@ static void solve_l2r_l1l2_svc(
 	int l = prob->l;
 	int w_size = prob->n;
 	int i, s, iter = 0;
-	double C, d;
+	double C, d, G;
 	double *QD = new double[l];
 	int max_iter = 1000;
 	int *index = new int[l];
@@ -896,17 +790,6 @@ static void solve_l2r_l1l2_svc(
 	double PGmax_old = INF;
 	double PGmin_old = -INF;
 	double PGmax_new, PGmin_new;
-
-	// for multi-core dual CD
-	// candidates: a block considered for gradient evaluation
-	// workingset: a subset of candidates for sequential CD updates
-	double eps1 = 0.1;
-	double min_eps1 = min(0.01*eps, eps1);
-	int init_candidates_size = 256;
-	int max_candidates_size = 4096;
-	int candidates_size = min(init_candidates_size, max_candidates_size);
-	double *Grad = new double[max_candidates_size];
-	int *workingset = new int[max_candidates_size];
 
 	// default solver_type: L2R_L2LOSS_SVC_DUAL
 	double diag[3] = {0.5/Cn, 0, 0.5/Cp};
@@ -953,127 +836,73 @@ static void solve_l2r_l1l2_svc(
 	{
 		PGmax_new = -INF;
 		PGmin_new = INF;
-		int t = 0;
-		int num_updates_one_iter = 0;
 
 		for (i=0; i<active_size; i++)
 		{
-			int j = i+rand_int(active_size-i);
+			int j = i+rand()%(active_size-i);
 			swap(index[i], index[j]);
 		}
-		while (t < active_size)
+
+		for (s=0; s<active_size; s++)
 		{
-			int send = min(candidates_size, active_size-t);
+			i = index[s];
+			const schar yi = y[i];
+			feature_node * const xi = prob->x[i];
 
-#pragma omp parallel for private(s,i) schedule(static)
-			for (s=0; s<send; s++)
+			G = yi*sparse_operator::dot(w, xi)-1;
+
+			C = upper_bound[GETI(i)];
+			G += alpha[i]*diag[GETI(i)];
+
+			PG = 0;
+			if (alpha[i] == 0)
 			{
-				i = index[t+s];
-				Grad[s] = y[i]*sparse_operator::dot(w, prob->x[i])-1 + alpha[i]*diag[GETI(i)];
-			}
-
-			int workingset_size = 0;
-
-			for (s=0; s<send; s++)
-			{
-				PG = 0;
-				i = index[t+s];
-				C = upper_bound[GETI(i)];
-
-				// A cleaner if-else statement is used here for calculating projected gradient.
-				// We do not consider it in single-thread cddual due to slightly slower training
-				// in some data sets (e.g., 5% for covtype). The reasons are that more
-				// conditions are checked here and the computation within the if-else statement
-				// is lighter in single-thread cddual
-				if ((alpha[i] < C && Grad[s] < 0) ||
-					(alpha[i] > 0 && Grad[s] > 0))
-					PG = Grad[s];
-				else if ((alpha[i] == 0 && Grad[s] > PGmax_old) ||
-						 (alpha[i] == C && Grad[s] < PGmin_old))
+				if (G > PGmax_old)
 				{
 					active_size--;
-					send--;
-					if (t+send == active_size)
-						swap(index[t+s], index[t+send]);
-					else
-					{
-						int r = index[active_size];
-						index[active_size] = index[t+s];
-						index[t+s] = index[t+send];
-						index[t+send] = r;
-					}
-					Grad[s] = Grad[send];
+					swap(index[s], index[active_size]);
 					s--;
 					continue;
 				}
-				PGmax_new = max(PGmax_new, PG);
-				PGmin_new = min(PGmin_new, PG);
-
-				if (fabs(PG) >= 0.1*eps1)
-				{
-					workingset[workingset_size] = i;
-					workingset_size++;
-				}
+				else if (G < 0)
+					PG = G;
 			}
-
-			if (workingset_size == 0)
-				candidates_size = min((int)(candidates_size*1.5), max_candidates_size);
-			else if (workingset_size >= init_candidates_size)
-				candidates_size = candidates_size/2;
-
-			for (s=0; s<workingset_size; s++)
+			else if (alpha[i] == C)
 			{
-				i = workingset[s];
-
-				const schar yi = y[i];
-				feature_node * const xi = prob->x[i];
-
-				double G = yi*sparse_operator::dot(w, xi)-1;
-
-				C = upper_bound[GETI(i)];
-				G += alpha[i]*diag[GETI(i)];
-
-				double alpha_new = min(max(alpha[i] - G/QD[i], 0.0), C);
-				d = alpha_new - alpha[i];
-				if (fabs(d) > 1.0e-15)
+				if (G < PGmin_old)
 				{
-					alpha[i] = alpha_new;
-					sparse_operator::axpy(d*yi, xi, w);
-					num_updates_one_iter++;
+					active_size--;
+					swap(index[s], index[active_size]);
+					s--;
+					continue;
 				}
+				else if (G > 0)
+					PG = G;
 			}
-			t = t + send;
+			else
+				PG = G;
+
+			PGmax_new = max(PGmax_new, PG);
+			PGmin_new = min(PGmin_new, PG);
+
+			if(fabs(PG) > 1.0e-12)
+			{
+				double alpha_old = alpha[i];
+				alpha[i] = min(max(alpha[i] - G/QD[i], 0.0), C);
+				d = (alpha[i] - alpha_old)*yi;
+				sparse_operator::axpy(d, xi, w);
+			}
 		}
 
 		iter++;
 		if(iter % 10 == 0)
 			info(".");
 
-		// reset active set and decrease eps1
-		if(num_updates_one_iter == 0)
-		{
-			if(active_size == l && eps1 <= eps)
-				break;
-
-			eps1 = max(0.1*eps1, min_eps1);
-
-			active_size = l;
-			info("*");
-			PGmax_old = INF;
-			PGmin_old = -INF;
-			continue;
-		}
-
-		if(PGmax_new - PGmin_new <= eps1)
-			eps1 = max(0.1*eps1, min_eps1);
-
 		if(PGmax_new - PGmin_new <= eps)
 		{
 			if(active_size == l)
 				break;
-
-			// use a stricter criteria for resetting active set
-			if(PGmax_new - PGmin_new <= 0.9*eps || active_size >= 0.05*l)
+			else
 			{
 				active_size = l;
 				info("*");
@@ -1082,7 +911,6 @@ static void solve_l2r_l1l2_svc(
 				continue;
 			}
 		}
-
 		PGmax_old = PGmax_new;
 		PGmin_old = PGmin_new;
 		if (PGmax_old <= 0)
@@ -1114,8 +942,6 @@ static void solve_l2r_l1l2_svc(
 	delete [] alpha;
 	delete [] y;
 	delete [] index;
-	delete [] Grad;
-	delete [] workingset;
 }
 
 
@@ -1204,7 +1030,7 @@ static void solve_l2r_l1l2_svr(
 
 		for(i=0; i<active_size; i++)
 		{
-			int j = i+rand_int(active_size-i);
+			int j = i+rand()%(active_size-i);
 			swap(index[i], index[j]);
 		}
 
@@ -1405,7 +1231,7 @@ void solve_l2r_lr_dual(const problem *prob, double *w, double eps, double Cp, do
 	{
 		for (i=0; i<l; i++)
 		{
-			int j = i+rand_int(l-i);
+			int j = i+rand()%(l-i);
 			swap(index[i], index[j]);
 		}
 		int newton_iter = 0;
@@ -1576,7 +1402,7 @@ static void solve_l1r_l2_svc(
 
 		for(j=0; j<active_size; j++)
 		{
-			int i = j+rand_int(active_size-j);
+			int i = j+rand()%(active_size-j);
 			swap(index[i], index[j]);
 		}
 
@@ -1943,7 +1769,7 @@ static void solve_l1r_lr(
 
 			for(j=0; j<QP_active_size; j++)
 			{
-				int i = j+rand_int(QP_active_size-j);
+				int i = j+rand()%(QP_active_size-j);
 				swap(index[i], index[j]);
 			}
 
@@ -2441,8 +2267,6 @@ model* train(const problem *prob, const parameter *param)
 	model_->param = *param;
 	model_->bias = prob->bias;
 
-	omp_set_num_threads(param->nr_thread);
-
 	if(check_regression_model(model_))
 	{
 		model_->w = Malloc(double, w_size);
@@ -2591,15 +2415,12 @@ void cross_validation(const problem *prob, const parameter *param, int nr_fold, 
 	for(i=0;i<l;i++) perm[i]=i;
 	for(i=0;i<l;i++)
 	{
-		int j = i+rand_int(l-i);
+		int j = i+rand()%(l-i);
 		swap(perm[i],perm[j]);
 	}
 	for(i=0;i<=nr_fold;i++)
 		fold_start[i]=i*l/nr_fold;
 
-#ifdef CV_OMP
-#pragma omp parallel for private(i) schedule(dynamic)
-#endif
 	for(i=0;i<nr_fold;i++)
 	{
 		int begin = fold_start[i];
@@ -2665,7 +2486,7 @@ void find_parameter_C(const problem *prob, const parameter *param, int nr_fold, 
 	for(i=0;i<l;i++) perm[i]=i;
 	for(i=0;i<l;i++)
 	{
-		int j = i+rand_int(l-i);
+		int j = i+rand()%(l-i);
 		swap(perm[i],perm[j]);
 	}
 	for(i=0;i<=nr_fold;i++)
@@ -2709,18 +2530,14 @@ void find_parameter_C(const problem *prob, const parameter *param, int nr_fold, 
 		//Output disabled for running CV at a particular C
 		set_print_string_function(&print_null);
 
-#ifdef CV_OMP
-#pragma omp parallel for private(i) schedule(dynamic)
-#endif
 		for(i=0; i<nr_fold; i++)
 		{
 			int j;
 			int begin = fold_start[i];
 			int end = fold_start[i+1];
 
-			struct parameter param_t = param1;
-			param_t.init_sol = prev_w[i];
-			struct model *submodel = train(&subprob[i],&param_t);
+			param1.init_sol = prev_w[i];
+			struct model *submodel = train(&subprob[i],&param1);
 
 			int total_w_size;
 			if(submodel->nr_class == 2)
@@ -2985,11 +2802,6 @@ struct model *load_model(const char *model_file_name)
 	double bias;
 	model *model_ = Malloc(model,1);
 	parameter& param = model_->param;
-	// parameters for training only won't be assigned, but arrays are assigned as NULL for safety
-	param.nr_weight = 0;
-	param.weight_label = NULL;
-	param.weight = NULL;	
-	param.init_sol = NULL;
 
 	model_->label = NULL;
 

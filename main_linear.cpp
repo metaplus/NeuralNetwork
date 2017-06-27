@@ -5,8 +5,12 @@ int main() {
 
 
 
-    unit ss;
+    nnet unit;
 
-    ss.init<problem>(1);
+    unit.init<problem>(1);
+    unit.init<parameter>(int{L2R_L2LOSS_SVC});
+    auto model=unit.train();
+    auto result=unit.predict();
+    cout<<"finish"<<en;
     return 0;
 }

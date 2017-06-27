@@ -1,7 +1,6 @@
 CXX ?= g++
 CC ?= gcc
-CFLAGS = -Wall -Wconversion -O3 -fPIC -fopenmp
-# CFLAGS += -DCV_OMP
+CFLAGS = -Wall -Wconversion -O3 -fPIC
 LIBS = blas/blas.a
 SHVER = 3
 OS = $(shell uname)
@@ -15,7 +14,7 @@ lib: linear.o tron.o blas/blas.a
 	else \
 		SHARED_LIB_FLAG="-shared -Wl,-soname,liblinear.so.$(SHVER)"; \
 	fi; \
-	$(CXX) -fopenmp $${SHARED_LIB_FLAG} linear.o tron.o blas/blas.a -o liblinear.so.$(SHVER)
+	$(CXX) $${SHARED_LIB_FLAG} linear.o tron.o blas/blas.a -o liblinear.so.$(SHVER)
 
 train: tron.o linear.o train.c blas/blas.a
 	$(CXX) $(CFLAGS) -o train train.c tron.o linear.o $(LIBS)
