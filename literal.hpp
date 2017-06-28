@@ -14,6 +14,22 @@ const string ytest(int id){
     return string{"y_test_"}+lexical_cast<string>(id)+".csv";
 }
 
+template<typename T> inline
+vector<T> split_line(const string& line,char delim=','){
+    vector<T> result;
+    auto pos=0;
+    while(line.find(delim,pos)!=string::npos){
+        auto next=line.find(delim,pos);
+        result.push_back(lexical_cast<T>(line.substr(pos,next-pos)));
+        pos=next+1;
+    }
+    if(pos!=string::npos){
+        result.push_back(lexical_cast<T>(line.substr(pos)));
+    }
+    return result;
+}
+
+
 inline
 vector<feature_node> parse_feature(const string& line){
     vector<feature_node> feature;

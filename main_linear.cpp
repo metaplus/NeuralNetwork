@@ -4,7 +4,7 @@ int main() {
     cout<<boolalpha;
     vector<double> percentage;
     file::ofstream fout{root/"predict"/"confusion_linear.txt",ios::trunc};
-    for(auto round=1;round<=45;++round){
+    for(auto round=1;round<=5;++round){
 	    vector<nnet> cluster;
         nnet unit;
         auto result=unit

@@ -32,6 +32,7 @@ public:
     nnet& train(){
         assert(check_parameter(&prob,&para)==nullptr);
         modptr=::train(&prob,&para);
+	    cerr<<modptr->nr_class<<et<<modptr->nr_feature<<en;
         return *this;
     }
     vector<double> predict(){
@@ -47,23 +48,43 @@ public:
     }
 	vector<vector<double>> decision_value(const vector<string>& test){
 		vector<vector<double>> result;
-		transform(test.cbegin(),test.cend(),back_inserter(result),
-		          [&,this](const string& line){
-			vector<double> decision(modptr->nr_class);
+		transform(test.cbegin(),test.cend(),back_inserter(result),[&,this](const string& line){
+			//vector<double> decision(modptr->nr_class);
+			vector<double> tmp(modptr->nr_class);
+			vector<double> decision(3);
+			assert(decision[0]==0&&decision[1]==0&&decision[2]==0);
 			auto node=parse_feature(line);
-			::predict_values(modptr,node.data(),decision.data());
+			::predict_values(modptr,node.data(),tmp.data());
+			if(tmp.size()==3){
+				decision=move(tmp);
+			}else{
+				vector<int> label{modptr->label,modptr->label+modptr->nr_class};
+				assert(label.size()==tmp.size());
+				for(auto i=0;i<label.size();i++){
+					switch(label[i]){
+						case 1:
+							decision[0]=tmp[i];
+							break;
+						case 0:
+							decision[1]=tmp[i];
+							break;
+						case -1:
+							decision[2]=tmp[i];
+							break;
+						default:
+							break;
+					}
+				}
+			}
 			return decision;
 		});
 		assert(result.size()==test.size());
 		return result;
 	}
-private:
-
-
 };
 
 
-
+// template specialization definition
 namespace impl{
 	template<>
 	void initial<problem>(base& bs,int id,vector<string> y,vector<string> x){

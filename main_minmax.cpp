@@ -1,7 +1,7 @@
 #include "preliminary.hpp"
 
 const auto group_count=45;
-const auto tmp=5;
+const auto tmp=1;
 int main() {
 	cout<<boolalpha;
 	vector<double> percentage;
@@ -34,6 +34,7 @@ int main() {
 			y.push_back(move(line1));
 			x.push_back(move(line2));
 		}
+		// spawn a handling thread per asynchronous train task
 		for(auto i=0;i<module;++i){
 			task.push_back(boost::async(boost::launch::async,[&,i,xptr=xs[i],yptr=ys[i]] {
 				nnet unit;
@@ -90,8 +91,7 @@ int main() {
 		merge(0,2,greater<double>{});
 		auto& decision=result[0];
 		ostringstream oss;
-		auto correct=count_if(decision.begin(),decision.end(),
-		                      [&](vector<double>& vec)->bool{
+		auto correct=count_if(decision.begin(),decision.end(),[&](vector<double>& vec)->bool{
 			auto line=*yiter++;
 			auto actual=lexical_cast<int>(line);
 			// vote for desired label
@@ -101,12 +101,10 @@ int main() {
 			return label[offset]==actual;
 		});
 		fout<<en<<oss.str()<<en;
-
 		percentage.push_back(divides<double>()(correct,decision.size()));
 	}
 	cout<<"per"<<et<<percentage<<en;
 	cout<<"av"<<et<<accumulate(percentage.begin(),percentage.end(),0.0)/percentage.size()<<en;
-
 	cout<<"finish"<<en;
 	return 0;
 }

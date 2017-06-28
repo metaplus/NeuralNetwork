@@ -55,6 +55,7 @@ using boost::filesystem::directory_iterator;
 using boost::property_tree::ptree;
 using boost::wait_for_all;
 using boost::wait_for_any;
+using boost::launch;
 
 using boost::bind;
 using boost::asio::async_read_until;

@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 #include <set>
+#include <list>
 #include <fstream>
 #include <functional>
 #include <chrono>
@@ -33,6 +34,10 @@ using std::string;
 using std::vector;
 using std::set;
 using std::map;
+using std::queue;
+using std::priority_queue;
+using std::list;
+using std::deque;
 using std::unordered_map;
 using std::ios;
 using std::istringstream;
@@ -89,10 +94,14 @@ using std::max_element;
 using std::min_element;
 using std::minmax_element;
 using std::nth_element;
+using std::common_type;
+using std::common_type_t;
 
 using std::to_string;
 using std::max;
 using std::min;
+using std::pow;
+using std::sqrt;
 using std::advance;
 using std::distance;
 using std::ref;
