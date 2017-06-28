@@ -5,6 +5,7 @@ int main() {
     vector<double> percentage;
     file::ofstream fout{root/"predict"/"confusion_linear.txt",ios::trunc};
     for(auto round=1;round<=45;++round){
+	    vector<nnet> cluster;
         nnet unit;
         auto result=unit
                 .init<problem>(round)
@@ -19,12 +20,12 @@ int main() {
         istream_iterator<string> iter(yfs);
         auto correct=count_if(result.begin(),result.end(),[&](int desire){
             auto line=*iter++;
-            auto actual=stoi(line.substr(line.size()-1));
+            auto actual=lexical_cast<int>(line);
             fout<<actual<<et;
             return desire==actual;
         });
         fout<<en;
-        percentage.push_back(divides<double>{}(correct,result.size()));
+        percentage.push_back(divides<double>()(correct,result.size()));
     }
     cout<<"per"<<et<<percentage<<en;
     cout<<"av"<<et<<accumulate(percentage.begin(),percentage.end(),0.0)/percentage.size()<<en;

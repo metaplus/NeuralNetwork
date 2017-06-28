@@ -77,6 +77,18 @@ using std::divides;
 using std::multiplies;
 using std::minus;
 using std::plus;
+using std::less;
+using std::greater;
+using std::equal_to;
+using std::equal;
+using std::back_inserter;
+using std::front_inserter;
+using std::inserter;
+using std::insert_iterator;
+using std::max_element;
+using std::min_element;
+using std::minmax_element;
+using std::nth_element;
 
 using std::to_string;
 using std::max;

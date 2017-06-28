@@ -3,9 +3,9 @@ project(nnet_final)
 
 set(CMAKE_CXX_STANDARD 14)
 set(SOURCE_FILES
-        main_linear.cpp
+        #main_linear.cpp
         #main_minmax.cpp
-        #main_kmeans.cpp
+        main_kmeans.cpp
         liblinear/blas/blas.h   liblinear/blas/dnrm2.c  liblinear/blas/daxpy.c
         liblinear/blas/ddot.c   liblinear/blas/dscal.c  liblinear/tron.h
         liblinear/tron.cpp      liblinear/linear.h      liblinear/linear.cpp

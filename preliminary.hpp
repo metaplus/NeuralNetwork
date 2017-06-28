@@ -4,7 +4,6 @@
 #include "literal.hpp"
 
 const file::path root{file::current_path().parent_path()/"dataset"};
-const file::path model_dir{file::current_path().parent_path()/"model"};
 
 struct base{
     int index;
@@ -17,96 +16,16 @@ struct base{
 };
 
 namespace impl{
-
     template<typename T,typename... Args>
     void initial(base&,Args...);
-
-    template<>
-    void initial<problem>(base& bs,int id){
-        auto& problem=bs.prob;
-        bs.index=id;
-        file::ifstream xfs{root/xtrain(id)};
-        file::ifstream yfs{root/ytrain(id)};
-        assert(xfs&&yfs);
-        string line1,line2;
-        auto count=0;
-        once_flag token;
-        while(getline(yfs,line1)&&getline(xfs,line2)&&++count){
-            cout<<"count"<<et<<count<<en;
-            bs.label.push_back(lexical_cast<double>(line1));
-            call_once(token,[&]{
-                problem.n=std::count(line2.begin(),line2.end(),',')+2;
-            });
-            vector<feature_node> node;
-            auto index=0;
-            auto pos=0;
-            string value;
-            while(line2.find(',',pos)!=string::npos){
-                auto next=line2.find(',',pos);
-                value=line2.substr(pos,next-pos);
-                node.push_back(feature_node{++index,stod(value)});
-                pos=next+1;
-            }
-            value=line2.substr(pos);
-            // lexical_cast surprisingly takes '\0' as error while stod doesn'
-            node.push_back(feature_node{++index,stod(value)});
-            node.push_back(feature_node{-1,0});
-            bs.temp.push_back(move(node));
-            bs.attr.push_back(bs.temp.back().data());
-        }
-        problem.x=bs.attr.data();
-        problem.y=bs.label.data();
-        problem.l=count;
-        problem.bias=0;
-        cout<<problem.n<<en;
-        cout<<"a"<<et<<bs.attr.size()<<en;
-        cout<<"c"<<et<<count<<en;
-    };
-    template<>
-    void initial<parameter>(base& bs,int type){
-       // cout<<"t"<<et<<(type==L2R_L2LOSS_SVC_DUAL)<<en;
-        auto& param=bs.para;
-        param.solver_type = type;
-        param.C = 1;
-        param.eps = HUGE_VAL;
-        param.p = 0.1;
-        param.nr_weight = 0;
-        param.weight_label = NULL;
-        param.weight = NULL;
-        param.init_sol = NULL;
-        if(param.eps == HUGE_VAL) {
-            switch (param.solver_type) {
-                case L2R_LR:
-                case L2R_L2LOSS_SVC:
-                    param.eps = 0.01;
-                    break;
-                case L2R_L2LOSS_SVR:
-                    param.eps = 0.001;
-                    break;
-                case L2R_L2LOSS_SVC_DUAL:
-                case L2R_L1LOSS_SVC_DUAL:
-                case MCSVM_CS:
-                case L2R_LR_DUAL:
-                    param.eps = 0.1;
-                    break;
-                case L1R_L2LOSS_SVC:
-                case L1R_LR:
-                    param.eps = 0.01;
-                    break;
-                case L2R_L1LOSS_SVR_DUAL:
-                case L2R_L2LOSS_SVR_DUAL:
-                    param.eps = 0.1;
-                    break;
-            }
-        }
-    };
 }
 
 
 class nnet:public base{
 public:
+	// elegant visitor design pattern
     template<typename U,typename... Args>
-    nnet& init(Args... a){   // elegant visitor design pattern
+    nnet& init(Args... a){
         impl::initial<U>(*this,forward<Args>(a)...);
         return *this;
     }
@@ -121,27 +40,104 @@ public:
         assert(xfs);
         string line;
         while(getline(xfs,line)){
-            if(line[0]==',')
-                break;
-            vector<feature_node> feature;
-            auto index=0;
-            auto pos=0;
-            string value;
-            while(line.find(',',pos)!=string::npos){
-                auto next=line.find(',',pos);
-                value=line.substr(pos,next-pos);
-                feature.push_back(feature_node{++index,stod(value)});
-                pos=next+1;
-            }
-            value=line.substr(pos);
-            feature.push_back(feature_node{++index,stod(value)});
-            feature.push_back(feature_node{-1,0});
-            result.push_back(::predict(modptr,feature.data()));
+            auto node=parse_feature(line);
+	        result.push_back(::predict(modptr,node.data()));
         }
         return result;
     }
+	vector<vector<double>> decision_value(const vector<string>& test){
+		vector<vector<double>> result;
+		transform(test.cbegin(),test.cend(),back_inserter(result),
+		          [&,this](const string& line){
+			vector<double> decision(modptr->nr_class);
+			auto node=parse_feature(line);
+			::predict_values(modptr,node.data(),decision.data());
+			return decision;
+		});
+		assert(result.size()==test.size());
+		return result;
+	}
 private:
 
 
 };
+
+
+
+namespace impl{
+	template<>
+	void initial<problem>(base& bs,int id,vector<string> y,vector<string> x){
+		assert(y.size()==x.size());
+		auto& problem=bs.prob;
+		bs.index=id;
+		once_flag token;
+		auto cnt=0;
+		transform(y.begin(),y.end(),x.begin(),back_inserter(bs.attr),
+		          [&](string& line1,string& line2)->feature_node*{
+			          ++cnt;
+			          bs.label.push_back(lexical_cast<double>(line1));
+			          call_once(token,[&]{
+				          problem.n=std::count(line2.begin(),line2.end(),',')+2;
+			          });
+			          auto node=parse_feature(line2);
+			          bs.temp.push_back(move(node));
+			          return bs.temp.back().data();
+		          });
+		cerr<<"count"<<et<<cnt<<en;
+		problem.x=bs.attr.data();
+		problem.y=bs.label.data();
+		problem.l=cnt;
+		problem.bias=0;
+	}
+	template<>
+	void initial<problem>(base& bs,int id){
+		file::ifstream xfs{root/xtrain(id)};
+		file::ifstream yfs{root/ytrain(id)};
+		assert(xfs&&yfs);
+		string line1,line2;
+		vector<string> y,x;
+		while(getline(yfs,line1)&&getline(xfs,line2)){
+			y.push_back(move(line1));
+			x.push_back(move(line2));
+		}
+		initial<problem>(bs,id,move(y),move(x));
+	};
+	template<>
+	void initial<parameter>(base& bs,int type){
+		auto& param=bs.para;
+		param.solver_type = type;
+		param.C = 1;
+		param.eps = HUGE_VAL;
+		param.p = 0.1;
+		param.nr_weight = 0;
+		param.weight_label = NULL;
+		param.weight = NULL;
+		param.init_sol = NULL;
+		if(param.eps == HUGE_VAL) {
+			switch (param.solver_type) {
+				case L2R_LR:
+				case L2R_L2LOSS_SVC:
+					param.eps = 0.01;
+					break;
+				case L2R_L2LOSS_SVR:
+					param.eps = 0.001;
+					break;
+				case L2R_L2LOSS_SVC_DUAL:
+				case L2R_L1LOSS_SVC_DUAL:
+				case MCSVM_CS:
+				case L2R_LR_DUAL:
+					param.eps = 0.1;
+					break;
+				case L1R_L2LOSS_SVC:
+				case L1R_LR:
+					param.eps = 0.01;
+					break;
+				case L2R_L1LOSS_SVR_DUAL:
+				case L2R_L2LOSS_SVR_DUAL:
+					param.eps = 0.1;
+					break;
+			}
+		}
+	};
+}
 
