@@ -32,13 +32,14 @@ namespace impl{
         auto count=0;
         once_flag token;
         while(getline(yfs,line1)&&getline(xfs,line2)&&++count){
-            bs.label.push_back(stod(line1));
+            cout<<"count"<<et<<count<<en;
+            bs.label.push_back(lexical_cast<double>(line1));
             call_once(token,[&]{
                 problem.n=std::count(line2.begin(),line2.end(),',')+2;
             });
             vector<feature_node> node;
             auto index=0;
-            auto pos=3;
+            auto pos=0;
             string value;
             while(line2.find(',',pos)!=string::npos){
                 auto next=line2.find(',',pos);
@@ -50,11 +51,8 @@ namespace impl{
             // lexical_cast surprisingly takes '\0' as error while stod doesn'
             node.push_back(feature_node{++index,stod(value)});
             node.push_back(feature_node{-1,0});
-            assert(index==310);
-            assert(node.size()==311);
             bs.temp.push_back(move(node));
             bs.attr.push_back(bs.temp.back().data());
-            assert(bs.temp.back().size()==311);
         }
         problem.x=bs.attr.data();
         problem.y=bs.label.data();
@@ -108,18 +106,39 @@ namespace impl{
 class nnet:public base{
 public:
     template<typename U,typename... Args>
-    void init(Args... a){   // elegant visitor design pattern
+    nnet& init(Args... a){   // elegant visitor design pattern
         impl::initial<U>(*this,forward<Args>(a)...);
+        return *this;
     }
-    model* train(){
+    nnet& train(){
         assert(check_parameter(&prob,&para)==nullptr);
         modptr=::train(&prob,&para);
-        return modptr;
+        return *this;
     }
     vector<double> predict(){
         vector<double> result;
-
-        return {};
+        file::ifstream xfs{root/xtest(index)};
+        assert(xfs);
+        string line;
+        while(getline(xfs,line)){
+            if(line[0]==',')
+                break;
+            vector<feature_node> feature;
+            auto index=0;
+            auto pos=0;
+            string value;
+            while(line.find(',',pos)!=string::npos){
+                auto next=line.find(',',pos);
+                value=line.substr(pos,next-pos);
+                feature.push_back(feature_node{++index,stod(value)});
+                pos=next+1;
+            }
+            value=line.substr(pos);
+            feature.push_back(feature_node{++index,stod(value)});
+            feature.push_back(feature_node{-1,0});
+            result.push_back(::predict(modptr,feature.data()));
+        }
+        return result;
     }
 private:
 

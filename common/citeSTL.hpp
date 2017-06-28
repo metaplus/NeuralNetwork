@@ -73,6 +73,10 @@ using std::is_same;
 using std::is_base_of;
 using std::is_function;
 using std::once_flag;
+using std::divides;
+using std::multiplies;
+using std::minus;
+using std::plus;
 
 using std::to_string;
 using std::max;
@@ -148,9 +152,7 @@ ostream& operator<<(ostream& os,pair<T,U> pr){
 }
 template <typename T>
 ostream& operator<<(ostream& os,vector<T> vec){
-    for(const auto& v:vec ){
-        os<<v<<et;
-    }
+    copy(vec.begin(),vec.end(),ostream_iterator<T>(cout,"\t"));
     return os;
 }
 
