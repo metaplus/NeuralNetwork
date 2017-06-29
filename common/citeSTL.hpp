@@ -74,6 +74,7 @@ using std::default_random_engine;
 using std::enable_if;
 using std::enable_if_t;
 using std::conditional;
+using std::conditional_t;
 using std::is_same;
 using std::is_base_of;
 using std::is_function;
@@ -145,9 +146,8 @@ inline
 ostream& crlf(ostream& os){
     return  os<<'\r'<<'\n';
 }
-
-template <typename T,typename Di=typename conditional<numeric_limits<T>().is_integer,
-        uniform_int_distribution<>,uniform_real_distribution<>>::type>
+template <typename T,typename Di=conditional_t<numeric_limits<T>().is_integer,
+        uniform_int_distribution<>,uniform_real_distribution<>>>
 class randomizer{
 public:
     using value_type =T;
@@ -167,13 +167,13 @@ ostream& operator<<(ostream& os,const symbol e){
     return os<<char{e};
 }
 
-template<typename T,typename U>
+template<typename T,typename U> inline
 ostream& operator<<(ostream& os,pair<T,U> pr){
     return os<<pr.first<<' '<<pr.second<<en;
 }
-template <typename T>
+template <typename T> inline
 ostream& operator<<(ostream& os,vector<T> vec){
-    copy(vec.begin(),vec.end(),ostream_iterator<T>(cout,"\t"));
+    copy(vec.begin(),vec.end(),ostream_iterator<T>(cout,","));
     return os;
 }
 

@@ -24,20 +24,20 @@ namespace impl{
     void initial(base&,Args...);
 }
 
-
 class nnet:public base{
 public:
-	// elegant visitor design pattern
-	// all initial function will be forwarded
+	// elegant visitor pattern in c++ design pattern
     template<typename U,typename... Args>
     nnet& init(Args... a){
-        impl::initial<U>(*this,forward<Args>(a)...);
+		// all initial function will be forwarded to its specialization with varied parameters
+		impl::initial<U>(*this,forward<Args>(a)...);
         return *this;
     }
     nnet& train(){
+	    // check validation before training
         assert(check_parameter(&prob,&para)==nullptr);
+	    // call global field lib-linear train function
         modptr=::train(&prob,&para);
-	    cerr<<modptr->nr_class<<et<<modptr->nr_feature<<en;
         return *this;
     }
 	// predict directly
@@ -47,6 +47,7 @@ public:
         assert(xfs);
         string line;
         while(getline(xfs,line)){
+	        // pull formal structure from a line of .csv file
             auto node=parse_feature(line);
 	        result.push_back(::predict(modptr,node.data()));
         }
@@ -56,16 +57,11 @@ public:
 	vector<vector<double>> decision_value(const vector<string>& test){
 		vector<vector<double>> result;
 		transform(test.cbegin(),test.cend(),back_inserter(result),[&,this](const string& line){
-			//vector<double> decision(modptr->nr_class);
 			vector<double> tmp(modptr->nr_class);
 			vector<double> decision(3);
-			assert(decision[0]==0&&decision[1]==0&&decision[2]==0);
 			auto node=parse_feature(line);
 			::predict_values(modptr,node.data(),tmp.data());
 			if(tmp.size()==3){
-				assert(tmp[0]>-1000&&tmp[0]<1000);
-				assert(tmp[1]>-1000&&tmp[1]<1000);
-				assert(tmp[2]>-1000&&tmp[2]<1000);
 				decision=move(tmp);
 			}else{
 				// in k means aggregation, it's possible for a model with less properties
@@ -74,18 +70,9 @@ public:
 				assert(label.size()==tmp.size());
 				for(auto i=0;i<label.size();i++){
 					switch(label[i]){
-						case 1:
-							decision[0]=tmp[i];
-							break;
-						case 0:
-							decision[1]=tmp[i];
-							break;
-						case -1:
-							decision[2]=tmp[i];
-							break;
-						default:
-							cerr<<"lab"<<et<<label[i]<<en;
-							std::abort();
+						case 1:decision[0]=tmp[i];break;
+						case 0:decision[1]=tmp[i];break;
+						case -1:decision[2]=tmp[i];break;
 					}
 				}
 			}
@@ -117,7 +104,6 @@ namespace impl{
 			          bs.temp.push_back(move(node));
 			          return bs.temp.back().data();
 		          });
-		cerr<<"count"<<et<<cnt<<en;
 		problem.x=bs.attr.data();
 		problem.y=bs.label.data();
 		problem.l=cnt;
@@ -151,26 +137,16 @@ namespace impl{
 		if(param.eps == HUGE_VAL) {
 			switch (param.solver_type) {
 				case L2R_LR:
-				case L2R_L2LOSS_SVC:
-					param.eps = 0.01;
-					break;
-				case L2R_L2LOSS_SVR:
-					param.eps = 0.001;
-					break;
+				case L2R_L2LOSS_SVC:param.eps = 0.01;break;
+				case L2R_L2LOSS_SVR:param.eps = 0.001;break;
 				case L2R_L2LOSS_SVC_DUAL:
 				case L2R_L1LOSS_SVC_DUAL:
 				case MCSVM_CS:
-				case L2R_LR_DUAL:
-					param.eps = 0.1;
-					break;
+				case L2R_LR_DUAL:param.eps = 0.1;break;
 				case L1R_L2LOSS_SVC:
-				case L1R_LR:
-					param.eps = 0.01;
-					break;
+				case L1R_LR:param.eps = 0.01;break;
 				case L2R_L1LOSS_SVR_DUAL:
-				case L2R_L2LOSS_SVR_DUAL:
-					param.eps = 0.1;
-					break;
+				case L2R_L2LOSS_SVR_DUAL:param.eps = 0.1;break;
 			}
 		}
 	};
