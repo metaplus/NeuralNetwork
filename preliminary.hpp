@@ -6,6 +6,7 @@
 // global configuration variable
 const file::path root{file::current_path().parent_path()/"dataset"};
 const auto group_count=45;
+const auto module=4;
 
 // base class for nnet class
 struct base{
@@ -15,7 +16,7 @@ struct base{
     model* modptr;
     vector<double> label;
     vector<feature_node*> attr;
-    vector<vector<feature_node>> temp;
+    vector<shared_ptr<vector<feature_node>>> manager;
 };
 
 // general template, its specialization is defined in the end
@@ -45,40 +46,35 @@ public:
         vector<double> result;
         file::ifstream xfs{root/xtest(index)};
         assert(xfs);
-        string line;
-        while(getline(xfs,line)){
-	        // pull formal structure from a line of .csv file
-            auto node=parse_feature(line);
-	        result.push_back(::predict(modptr,node.data()));
-        }
+		for_each(istream_iterator<string>{xfs},istream_iterator<string>{},
+		         [&](const string& line){
+					result.push_back(::predict(modptr,parse_feature(line)->data()));
+		         });
         return result;
     }
-	// return decision value for voting
+	// return decision value before voting
 	vector<vector<double>> decision_value(const vector<string>& test){
-		vector<vector<double>> result;
-		transform(test.cbegin(),test.cend(),back_inserter(result),[&,this](const string& line){
-			vector<double> tmp(modptr->nr_class);
+		vector<vector<double>> result(test.size());
+		transform(test.cbegin(),test.cend(),result.begin(),[&,this](const string& line){
+			vector<double> temp(modptr->nr_class);
 			vector<double> decision(3);
-			auto node=parse_feature(line);
-			::predict_values(modptr,node.data(),tmp.data());
-			if(tmp.size()==3){
-				decision=move(tmp);
+			::predict_values(modptr,parse_feature(line)->data(),temp.data());
+			if(temp.size()==3){
+				return temp;
 			}else{
 				// in k means aggregation, it's possible for a model with less properties
 				// therefore, it's necessary to mark 0 as neutral for vanish feature
 				vector<int> label{modptr->label,modptr->label+modptr->nr_class};
-				assert(label.size()==tmp.size());
 				for(auto i=0;i<label.size();i++){
 					switch(label[i]){
-						case 1:decision[0]=tmp[i];break;
-						case 0:decision[1]=tmp[i];break;
-						case -1:decision[2]=tmp[i];break;
+						case 1:decision[0]=temp[i];break;
+						case 0:decision[1]=temp[i];break;
+						case -1:decision[2]=temp[i];break;
 					}
 				}
+				return decision;
 			}
-			return decision;
 		});
-		assert(result.size()==test.size());
 		return result;
 	}
 };
@@ -89,25 +85,19 @@ namespace impl{
 	template<>
 	void initial<problem>(base& bs,int id,vector<string> y,vector<string> x){
 		assert(y.size()==x.size());
-		auto& problem=bs.prob;
-		bs.index=id;
-		once_flag token;
-		auto cnt=0;
-		transform(y.begin(),y.end(),x.begin(),back_inserter(bs.attr),
-		          [&](string& line1,string& line2)->feature_node*{
-			          ++cnt;
+		bs.attr.resize(y.size());
+		transform(y.begin(),y.end(),x.begin(),bs.attr.begin(),
+		          [&](const string& line1,const string& line2)->feature_node*{
 			          bs.label.push_back(lexical_cast<double>(line1));
-			          call_once(token,[&]{
-				          problem.n=std::count(line2.begin(),line2.end(),',')+2;
-			          });
-			          auto node=parse_feature(line2);
-			          bs.temp.push_back(move(node));
-			          return bs.temp.back().data();
+			          bs.manager.push_back(parse_feature(line2));
+			          return bs.manager.back()->data();
 		          });
-		problem.x=bs.attr.data();
-		problem.y=bs.label.data();
-		problem.l=cnt;
-		problem.bias=0;
+		bs.prob.n=std::count(x.back().begin(),x.back().end(),',')+2;
+		bs.prob.x=bs.attr.data();
+		bs.prob.y=bs.label.data();
+		bs.prob.l=y.size();
+		bs.prob.bias=0;
+		bs.index=id;
 	}
 	template<>
 	void initial<problem>(base& bs,int id){

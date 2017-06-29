@@ -98,6 +98,7 @@ using std::nth_element;
 using std::common_type;
 using std::common_type_t;
 
+using std::for_each;
 using std::to_string;
 using std::max;
 using std::min;

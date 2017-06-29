@@ -31,19 +31,19 @@ vector<T> split_line(const string& line,char delim=','){
 
 
 inline
-vector<feature_node> parse_feature(const string& line){
-    vector<feature_node> feature;
+shared_ptr<vector<feature_node>> parse_feature(const string& line){
+    auto feature=make_shared<vector<feature_node>>();
     auto index=0;
     auto pos=0;
     string value;
     while(line.find(',',pos)!=string::npos){
         auto next=line.find(',',pos);
         value=line.substr(pos,next-pos);
-        feature.push_back(feature_node{++index,stod(value)});
+        feature->push_back(feature_node{++index,stod(value)});
         pos=next+1;
     }
     value=line.substr(pos);
-    feature.push_back(feature_node{++index,stod(value)});
-    feature.push_back(feature_node{-1,0});
+    feature->push_back(feature_node{++index,stod(value)});
+    feature->push_back(feature_node{-1,0});
     return feature;
 }

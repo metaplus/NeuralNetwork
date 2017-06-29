@@ -7,7 +7,6 @@ int main() {
 	file::ofstream fout{root/"predict"/"confusion_minmax.txt",ios::trunc};
 	// model cluster, as callback handler of asynchronous parallel tasks
 	vector<vector<unique_future<nnet>>> pool(group_count);
-	const auto module=4;
 	// 4 origin input module, 2 min module with 1 max module
 	// therefore origin index module number is between 0 and 3
 	randomizer<int> seed{0,module-1};
@@ -35,7 +34,6 @@ int main() {
 			y.push_back(move(line1));
 			x.push_back(move(line2));
 		}
-		// spawn a handling thread per asynchronous train task
 		for(auto i=0;i<module;++i){
 			task.push_back(boost::async([&,i,xptr=xs[i],yptr=ys[i]] {
 				nnet unit;
@@ -59,21 +57,14 @@ int main() {
 		file::ifstream yfin{root/ytest(round)};
 		assert(xfin&&yfin);
 		fout<<round<<en;
-		vector<string> xvec{istream_iterator<string>{xfin},istream_iterator<string>{}};
+		vector<string> str{istream_iterator<string>{xfin},istream_iterator<string>{}};
 		istream_iterator<string> yiter{yfin};
 		auto& task=pool[round-1];
 		vector<vector<double>> result[module];
-		once_flag token;
-		vector<int> label;
+		static const vector<int> label{1,0,-1};
 		for(auto k=0;k<module;++k){
-			auto model=task[k].get();
-			call_once(token,[&]{
-				auto ptr=model.modptr;
-				label.assign(ptr->label,ptr->label+ptr->nr_class);
-				assert(label.size()==3);
-			});
-			auto tmp=model.decision_value(xvec);
-			result[k]=move(tmp);
+			// get module and decision value
+			result[k]=task[k].get().decision_value(str);
 		}
 		// concise unified lambda expression for comparison
 		auto merge=[&result](int i,int j,function<bool(double,double)> func){

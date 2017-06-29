@@ -5,7 +5,6 @@
 struct spot{
 	int label;
 	vector<double> attr;
-	string yline;
 	string xline;
 };
 
@@ -41,8 +40,8 @@ vector<T>& operator/=(vector<T>& left,const U& den){
 	return left;
 }
 
-// randomly choose k different index number
-// while fairly partition and present randomness in sub range may be better
+// randomly choose k different index number in this implementation
+// while partition in balance and present randomness in sub range may be better to some extents
 inline
 set<int> random_select(int low,int high,int num){
 	static randomizer<int> seed{low,high};
@@ -69,7 +68,6 @@ int main() {
 	// model cluster
 	vector<vector<unique_future<nnet>>> pool(group_count);
 	assert(pool.size()==45);
-	const auto module=4;
 	// 4 origin input module, 2 min module with 1 max module
 	// therefore origin index module number is between 0 and 3
 	randomizer<int> seed{0,module-1};
@@ -84,11 +82,11 @@ int main() {
 		assert(xfs&&yfs);
 		// select ptr facilitating efficient copy to asynchronous task
 		string line1,line2;
-		vector<spot> all;  // cluster beyond centers
+		// all constructed points in clusters
+		vector<spot> all;
 		while(getline(yfs,line1)&&getline(xfs,line2)){
 			auto attribute=split_line<double>(line2);
-			all.push_back(spot{lexical_cast<int>(line1),move(attribute),
-			               move(line1),move(line2)});
+			all.push_back(spot{lexical_cast<int>(line1),move(attribute),move(line2)});
 		}
 		// k means method implementation where choosing k = 4
 		// firstly choose k appropriate initial center
@@ -140,17 +138,17 @@ int main() {
 		    auto yptr=make_shared<vector<string>>();
 		    for(auto& iter:vec){
 			    xptr->push_back(move(iter->xline));
-			    yptr->push_back(move(iter->yline));
+			    yptr->push_back(lexical_cast<string>(iter->label));
 		    }
 		    // async launch policy is default without specification
 		    // therefore c++ runtime library will schedule how many threads need to be spawned with optimization
 		    // it's been tested that default entrusted method performs better in large scale parallelism
-		    // force on conventional 1-thread-1-task will leads to expensive thread launch and context switching
+		    // force on conventional 1-thread-1-task will leads to expensive thread launches and context switching
 		    task.push_back(boost::async([&,xptr,yptr] {
 			    nnet unit;
 			    unit.init<problem>(round,*yptr,*xptr)
-					    .init<parameter>(6)
-					    .train();
+					.init<parameter>(6)
+					.train();
 			    return unit;
 		    }));
 		}
@@ -167,14 +165,13 @@ int main() {
 		file::ifstream yfin{root/ytest(round)};
 		assert(xfin&&yfin);
 		fout<<round<<en;
-		vector<string> xvec{istream_iterator<string>{xfin},istream_iterator<string>{}};
+		vector<string> xvec{istream_iterator<string>{xfin},
+		                    istream_iterator<string>{}};
 		istream_iterator<string> yiter{yfin};
 		auto& task=pool[round-1];
 		vector<vector<double>> result[module];
-	//	vector<int> label;
 		for(auto k=0;k<module;++k){
-			auto model=task[k].get();
-			result[k]=model.decision_value(xvec);
+			result[k]=task[k].get().decision_value(xvec);
 		}
 		// concise unified lambda expression for comparison
 		auto merge=[&result](int i,int j,function<bool(double,double)> func){
@@ -198,7 +195,7 @@ int main() {
 		auto& decision=result[0];
 		time_predict+=(steady_clock::now()-time_mark);
 		ostringstream oss;
-		vector<int> label{1,0,-1};
+		static const vector<int> label{1,0,-1};
 		// check phase
 		auto correct=count_if(decision.begin(),decision.end(),[&](vector<double>& vec)->bool{
 			auto line=*yiter++;
