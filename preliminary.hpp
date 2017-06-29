@@ -3,8 +3,11 @@
 #include "liblinear/linear.h"
 #include "literal.hpp"
 
+// global configuration variable
 const file::path root{file::current_path().parent_path()/"dataset"};
+const auto group_count=45;
 
+// base class for nnet class
 struct base{
     int index;
     problem prob;
@@ -15,6 +18,7 @@ struct base{
     vector<vector<feature_node>> temp;
 };
 
+// general template, its specialization is defined in the end
 namespace impl{
     template<typename T,typename... Args>
     void initial(base&,Args...);
@@ -24,6 +28,7 @@ namespace impl{
 class nnet:public base{
 public:
 	// elegant visitor design pattern
+	// all initial function will be forwarded
     template<typename U,typename... Args>
     nnet& init(Args... a){
         impl::initial<U>(*this,forward<Args>(a)...);
@@ -35,6 +40,7 @@ public:
 	    cerr<<modptr->nr_class<<et<<modptr->nr_feature<<en;
         return *this;
     }
+	// predict directly
     vector<double> predict(){
         vector<double> result;
         file::ifstream xfs{root/xtest(index)};
@@ -46,6 +52,7 @@ public:
         }
         return result;
     }
+	// return decision value for voting
 	vector<vector<double>> decision_value(const vector<string>& test){
 		vector<vector<double>> result;
 		transform(test.cbegin(),test.cend(),back_inserter(result),[&,this](const string& line){
@@ -56,8 +63,13 @@ public:
 			auto node=parse_feature(line);
 			::predict_values(modptr,node.data(),tmp.data());
 			if(tmp.size()==3){
+				assert(tmp[0]>-1000&&tmp[0]<1000);
+				assert(tmp[1]>-1000&&tmp[1]<1000);
+				assert(tmp[2]>-1000&&tmp[2]<1000);
 				decision=move(tmp);
 			}else{
+				// in k means aggregation, it's possible for a model with less properties
+				// therefore, it's necessary to mark 0 as neutral for vanish feature
 				vector<int> label{modptr->label,modptr->label+modptr->nr_class};
 				assert(label.size()==tmp.size());
 				for(auto i=0;i<label.size();i++){
@@ -72,7 +84,8 @@ public:
 							decision[2]=tmp[i];
 							break;
 						default:
-							break;
+							cerr<<"lab"<<et<<label[i]<<en;
+							std::abort();
 					}
 				}
 			}
@@ -125,6 +138,7 @@ namespace impl{
 	};
 	template<>
 	void initial<parameter>(base& bs,int type){
+		// default parameter
 		auto& param=bs.para;
 		param.solver_type = type;
 		param.C = 1;

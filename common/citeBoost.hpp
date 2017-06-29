@@ -19,6 +19,8 @@
 #include <boost/optional.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/asio/use_future.hpp>
+#include <boost/chrono.hpp>
+#include <boost/chrono/duration.hpp>
 
 namespace asio=boost::asio;
 namespace file=boost::filesystem;
@@ -28,6 +30,7 @@ namespace place = boost::asio::placeholders;
 namespace chrono = boost::chrono;
 namespace property = boost::property_tree;
 namespace posix = boost::posix_time;
+
 
 using error = boost::system::error_code;
 
@@ -53,6 +56,7 @@ using boost::asio::use_future;
 using boost::noncopyable;
 using boost::filesystem::directory_iterator;
 using boost::property_tree::ptree;
+using boost::chrono::steady_clock;
 using boost::wait_for_all;
 using boost::wait_for_any;
 using boost::launch;

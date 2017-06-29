@@ -1,20 +1,21 @@
 #include "preliminary.hpp"
 
-const auto group_count=45;
-const auto tmp=1;
 int main() {
-	cout<<boolalpha;
+	// vector structure, statistics of accuracy
 	vector<double> percentage;
+	// record file of confusion matrix
 	file::ofstream fout{root/"predict"/"confusion_minmax.txt",ios::trunc};
-	// model cluster
+	// model cluster, as callback handler of asynchronous parallel tasks
 	vector<vector<unique_future<nnet>>> pool(group_count);
-	assert(pool.size()==45);
 	const auto module=4;
 	// 4 origin input module, 2 min module with 1 max module
 	// therefore origin index module number is between 0 and 3
 	randomizer<int> seed{0,module-1};
 	// train phase
-	for(auto round=1;round<=tmp;++round){
+	chrono::duration<double> time_train;
+	chrono::duration<double> time_predict;
+	auto time_base=steady_clock::now();
+	for(auto round=1;round<=group_count;++round){
 		auto& task=pool[round-1];
 		file::ifstream xfs{root/xtrain(round)};
 		file::ifstream yfs{root/ytrain(round)};
@@ -36,7 +37,7 @@ int main() {
 		}
 		// spawn a handling thread per asynchronous train task
 		for(auto i=0;i<module;++i){
-			task.push_back(boost::async(boost::launch::async,[&,i,xptr=xs[i],yptr=ys[i]] {
+			task.push_back(boost::async([&,i,xptr=xs[i],yptr=ys[i]] {
 				nnet unit;
 				unit.init<problem>(round,*yptr,*xptr)
 					.init<parameter>(6)
@@ -44,14 +45,16 @@ int main() {
 				return unit;
 			}));
 		}
-		assert(task.size()==4);
 	}
 	// call-back for all asynchronous train tasks
+	// this loop will block until all task finished and returned
 	for_each(pool.begin(),pool.end(),[&](vector<unique_future<nnet>>& vec){
 		wait_for_all(vec.begin(),vec.end());
 	});
+	time_train=steady_clock::now()-time_base;
 	// predict phase
-	for(auto round=1;round<=tmp;++round){
+	for(auto round=1;round<=group_count;++round){
+		auto time_mark=steady_clock::now();
 		file::ifstream xfin{root/xtest(round)};
 		file::ifstream yfin{root/ytest(round)};
 		assert(xfin&&yfin);
@@ -89,7 +92,9 @@ int main() {
 		merge(2,3,less<double>{});
 		// max phase, target 0
 		merge(0,2,greater<double>{});
+		// make the final decision value;
 		auto& decision=result[0];
+		time_predict+=(steady_clock::now()-time_mark);
 		ostringstream oss;
 		auto correct=count_if(decision.begin(),decision.end(),[&](vector<double>& vec)->bool{
 			auto line=*yiter++;
@@ -103,8 +108,9 @@ int main() {
 		fout<<en<<oss.str()<<en;
 		percentage.push_back(divides<double>()(correct,decision.size()));
 	}
-	cout<<"per"<<et<<percentage<<en;
-	cout<<"av"<<et<<accumulate(percentage.begin(),percentage.end(),0.0)/percentage.size()<<en;
-	cout<<"finish"<<en;
+	cout<<"train"<<et<<time_train<<en;
+	cout<<"predict"<<et<<time_predict<<en;
+	cout<<"accuracy"<<et<<percentage<<en;
+	cout<<"average"<<et<<accumulate(percentage.begin(),percentage.end(),0.0)/percentage.size()<<en;
 	return 0;
 }
