@@ -23,7 +23,7 @@ vector<T> split_line(const string& line,char delim=','){
         result.push_back(lexical_cast<T>(line.substr(pos,next-pos)));
         pos=next+1;
     }
-    if(pos!=string::npos){
+    if(pos!=string::npos&&pos!=line.size()){
         result.push_back(lexical_cast<T>(line.substr(pos)));
     }
     return result;
